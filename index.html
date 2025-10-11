@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimal-ui">
+    <title>音奏 Game</title>
+    
+    <!-- Tailwind CSS CDN (Optional, but good practice for modern styling) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /*
+        * 1. 画面いっぱいに表示するための必須CSS設定
+        * htmlとbodyの余白をなくし、高さと幅をビューポート全体に設定します。
+        */
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%; /* ビューポートの高さ全体を使用 */
+            width: 100%;  /* ビューポートの幅全体を使用 */
+            overflow: hidden; /* スクロールバーを非表示にする */
+            font-family: 'Inter', sans-serif;
+            background-color: #1f2937; /* ダークグレーの背景 */
+        }
+
+        /*
+        * 2. Unityコンテナの設定
+        * このコンテナがゲームキャンバスを保持し、画面全体を覆います。
+        * Flexboxでキャンバスを中央に配置します。
+        */
+        #unity-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center; /* 水平方向の中央揃え */
+            align-items: center; /* 垂直方向の中央揃え */
+        }
+
+        /*
+        * 3. Unityキャンバス自体の設定 (ゲームの表示領域)
+        * コンテナのサイズに合わせてレスポンシブにサイズ変更されます。
+        * ここでは、キャンバスがコンテナ内で最大のサイズをとるようにし、アスペクト比を維持するための設定を
+        * Unityのビルド設定に依存させます。
+        */
+        #unity-canvas {
+            width: 100%;
+            height: 100%;
+            max-width: 100vw;
+            max-height: 100vh;
+        }
+
+        /*
+        * 4. ローディングバーとロゴのスタイル
+        */
+        .loading-overlay {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: #1f2937;
+            color: #ffffff;
+            z-index: 10;
+        }
+
+        .loading-progress-bar {
+            width: 80%;
+            max-width: 400px;
+            height: 12px;
+            background-color: #374151;
+            border-radius: 6px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+
+        .loading-progress {
+            height: 100%;
+            width: 0%; /* JavaScriptで更新される */
+            background-color: #3b82f6;
+            transition: width 0.1s;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+
+    <!--
+    |=================================================================|
+    |                 Unityゲームコンテナとローディング表示           |
+    |=================================================================|
+    -->
+    <div id="unity-container">
+        <!-- ローディングオーバーレイ -->
+        <div id="loading-overlay" class="loading-overlay">
+            <h1 class="text-3xl font-bold mb-4">ゲームをロード中...</h1>
+            <div class="loading-progress-bar">
+                <div id="loading-progress" class="loading-progress"></div>
+            </div>
+            <p id="loading-text" class="mt-4 text-sm text-gray-400">初期化中...</p>
+        </div>
+
+        <!-- Unityゲームが表示されるキャンバス要素 -->
+        <canvas id="unity-canvas" style="visibility: hidden;"></canvas>
+    </div>
+
+    <!--
+    |=================================================================|
+    |                 UnityローダーとJavaScriptロジック                 |
+    |=================================================================|
+    -->
+    <script>
+        // 環境変数が定義されているかチェック（Canvas環境用）
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // 実際のUnity WebGLビルドパスを設定してください。
+        // Unityをビルドすると、以下の3つのファイルが生成されます。
+        const buildConfig = {
+            dataUrl: "Build/MyGame.data.gz", // または .data (圧縮なしの場合)
+            frameworkUrl: "Build/MyGame.framework.js.gz", // または .framework.js
+            codeUrl: "Build/MyGame.wasm.gz", // または .wasm
+            loaderUrl: "Build/MyGame.loader.js", // UnityLoader.jsの代わりにこれを使用
+        };
+
+        // Unity WebGLローダーを動的に読み込む
+        const script = document.createElement("script");
+        script.src = buildConfig.loaderUrl;
+        document.body.appendChild(script);
+
+        const canvas = document.querySelector("#unity-canvas");
+        const loadingOverlay = document.querySelector("#loading-overlay");
+        const progressBar = document.querySelector("#loading-progress");
+        const loadingText = document.querySelector("#loading-text");
+
+        let unityInstance = null;
+
+        // Unityローダーが読み込まれた後に実行される
+        script.onload = () => {
+            if (typeof createUnityInstance !== 'function') {
+                console.error("Unityローダーが見つからないか、関数がありません。ファイルパスを確認してください。");
+                loadingText.textContent = "エラー: Unityローダーの読み込みに失敗しました。";
+                return;
+            }
+
+            // Unityインスタンスを作成
+            createUnityInstance(canvas, buildConfig, (progress) => {
+                // ロード進捗状況を更新
+                const percentage = Math.round(progress * 100);
+                progressBar.style.width = percentage + '%';
+                loadingText.textContent = `ロード中: ${percentage}%`;
+            }).then((instance) => {
+                // ロード完了
+                unityInstance = instance;
+                loadingOverlay.style.display = 'none'; // ローディング画面を非表示
+                canvas.style.visibility = 'visible'; // キャンバスを表示
+                console.log("Unityゲームのロードが完了しました。");
+                loadingText.textContent = "完了しました。";
+            }).catch((message) => {
+                // エラー処理
+                console.error("Unityゲームのロード中にエラーが発生しました:", message);
+                loadingText.textContent = `ロードエラー: ${message}`;
+                loadingOverlay.style.backgroundColor = '#dc2626';
+            });
+        };
+    </script>
+</body>
+</html>
